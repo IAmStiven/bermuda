@@ -21,7 +21,8 @@
     "error": {
       "some_active": "You have at least some active devices, this is good.",
       "no_scanners": "You need to configure some bluetooth scanners before Bermuda will have anything to work with. \nAny one of esphome bluetooth_proxy, Shelly bluetooth proxy or local bluetooth adaptor should get you started.",
-      "no_devices": "No bluetooth devices are actively being reported from your scanners. \nYou will need to solve this before Bermuda can be of much help."
+      "no_devices": "No bluetooth devices are actively being reported from your scanners. \nYou will need to solve this before Bermuda can be of much help.",
+      "invalid_findmy_export": "Invalid accessory JSON. Check the keys, UUID identifier, and timezone-aware pairing/alignment dates."
     },
     "step": {
       "init": {
@@ -80,6 +81,24 @@
         },
         "data_description": {
           "scanner_info": "Leave at zero to accept the global default, or enter a non-zero number to offset the rssi reported by that scanner. Adjust until the estimated distance above matches the actual distance between that scanner and the selected transmitting device. Negative values will increase the distance, positive values will decrease it."
+        }
+      },
+      "findmy": {
+        "title": "AirTags / Find My tags",
+        "description": "Import an owned AirTag or compatible Find My accessory to follow its rotating Bluetooth addresses."
+      },
+      "findmy_add": {
+        "title": "Add or update a Find My tag",
+        "description": "Paste one FindMy.py accessory JSON export. The tag is selected for tracking automatically. Importing the same identifier updates it. Keys are stored locally in Home Assistant configuration and backups. A recent alignment improves startup time.",
+        "data": {
+          "accessory_json": "Accessory JSON"
+        }
+      },
+      "findmy_remove": {
+        "title": "Remove Find My tags",
+        "description": "Removes saved keys and stops tracking these tags. Existing entities can be deleted from the device registry afterward.",
+        "data": {
+          "tags": "Tags to remove"
         }
       }
     }
