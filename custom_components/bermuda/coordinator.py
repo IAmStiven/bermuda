@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 import aiofiles
@@ -49,6 +50,7 @@ from homeassistant.helpers.device_registry import (
     EventDeviceRegistryUpdatedData,
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util.dt import get_age, now
 
@@ -64,6 +66,7 @@ from .const import (
     CONF_ATTENUATION,
     CONF_DEVICES,
     CONF_DEVTRACK_TIMEOUT,
+    CONF_FIND_MY,
     CONF_MAX_RADIUS,
     CONF_MAX_VELOCITY,
     CONF_REF_POWER,
@@ -94,6 +97,7 @@ from .const import (
     SIGNAL_SCANNERS_CHANGED,
     UPDATE_INTERVAL,
 )
+from .find_my import FindMyMatch, FindMyResolver, accessory_address, match_advertisement
 from .util import mac_explode_formats, mac_norm
 
 if TYPE_CHECKING:
@@ -203,6 +207,9 @@ class BermudaDataUpdateCoordinator(DataUpdateCoordinator):
         self.pb_state_sources: dict[str, str | None] = {}
 
         self.metadevices: dict[str, BermudaDevice] = {}
+        self._find_my_resolver = FindMyResolver(list(entry.options.get(CONF_FIND_MY, [])))
+        self._find_my_matches: dict[str, FindMyMatch] = {}
+        self._find_my_lock = asyncio.Lock()
 
         self._ad_listener_cancel: Cancellable | None = None
 
@@ -627,6 +634,36 @@ class BermudaDataUpdateCoordinator(DataUpdateCoordinator):
             self.devices[mac] = device = BermudaDevice(mac, self)
             return device
 
+    async def async_setup_find_my(self) -> None:
+        """Seed stable tag devices and prepare local address resolution."""
+        records = self.config_entry.options.get(CONF_FIND_MY, [])
+        if not records:
+            return
+        for record in records:
+            device = self._get_or_create_device(accessory_address(record))
+            device.name_bt_local_name = record["name"]
+            device.make_name()
+            device.create_sensor = device.address.upper() in self.options.get(CONF_DEVICES, [])
+            self.metadevices[device.address] = device
+        await self._async_refresh_find_my(datetime.now(UTC))
+        self.config_entry.async_on_unload(
+            async_track_time_interval(self.hass, self._async_refresh_find_my, timedelta(minutes=1))
+        )
+
+    async def _async_refresh_find_my(self, timestamp: datetime) -> None:
+        """Publish a new lookup snapshot without blocking Bluetooth callbacks."""
+        async with self._find_my_lock:
+            self._find_my_matches = await self.hass.async_add_executor_job(self._find_my_resolver.refresh, timestamp)
+
+    def _register_find_my_source(self, device: BermudaDevice, manufacturer_data: dict[int, bytes]) -> None:
+        """Attach each recognized rotating address to the same tag device."""
+        address = match_advertisement(self._find_my_matches, device.address, manufacturer_data)
+        if address is None:
+            return
+        metadevice = self.metadevices[address]
+        if device.address not in metadevice.metadevice_sources:
+            metadevice.metadevice_sources.insert(0, device.address)
+
     async def _async_update_data(self):
         """Implementation of DataUpdateCoordinator update_data function."""
         # return False
@@ -767,6 +804,7 @@ class BermudaDataUpdateCoordinator(DataUpdateCoordinator):
 
                 device = self._get_or_create_device(bledevice.address)
                 device.process_advertisement(scanner_device, advertisementdata)
+                self._register_find_my_source(device, advertisementdata.manufacturer_data)
 
         # end of for ha_scanner loop
         return True

@@ -49,6 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: BermudaConfigEntry) -> b
         raise ConfigEntryNotReady
 
     try:
+        await coordinator.async_setup_find_my()
         await coordinator.async_refresh()
     except Exception as ex:  # noqa: BLE001
         _LOGGER.exception(ex)

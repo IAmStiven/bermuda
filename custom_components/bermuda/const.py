@@ -210,3 +210,7 @@ If you have any issues with this you need to open an issue here:
 {ISSUE_URL}
 -------------------------------------------------------------------
 """
+
+# Find My exports are kept out of coordinator/device options and diagnostics.
+CONF_FIND_MY = "find_my_accessories"
+ADDR_TYPE_FIND_MY = "addr_type_find_my"

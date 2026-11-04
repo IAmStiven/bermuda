@@ -18,6 +18,8 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
 )
 
 from .const import (
@@ -27,6 +29,7 @@ from .const import (
     CONF_ATTENUATION,
     CONF_DEVICES,
     CONF_DEVTRACK_TIMEOUT,
+    CONF_FIND_MY,
     CONF_MAX_RADIUS,
     CONF_MAX_VELOCITY,
     CONF_REF_POWER,
@@ -48,6 +51,7 @@ from .const import (
     DOMAIN_PRIVATE_BLE_DEVICE,
     NAME,
 )
+from .find_my import accessory_address, parse_accessory
 from .util import mac_redact, rssi_to_metres
 
 if TYPE_CHECKING:
@@ -188,10 +192,74 @@ class BermudaOptionsFlowHandler(OptionsFlowWithConfigEntry):
             menu_options={
                 "globalopts": "Global Options",
                 "selectdevices": "Select Devices",
+                "findmy": "AirTags / Find My tags",
                 "calibration1_global": "Calibration 1: Global",
                 "calibration2_scanners": "Calibration 2: Scanner RSSI Offsets",
             },
             description_placeholders=messages,
+        )
+
+    async def async_step_findmy(self, user_input=None):
+        """Manage exports without redisplaying stored secrets."""
+        return self.async_show_menu(
+            step_id="findmy",
+            menu_options={"findmy_add": "Add or update a tag", "findmy_remove": "Remove tags"},
+        )
+
+    async def async_step_findmy_add(self, user_input=None):
+        """Import one FindMy.py accessory export."""
+        errors = {}
+        if user_input is not None:
+            try:
+                record = parse_accessory(user_input["accessory_json"])
+            except ValueError:
+                errors["base"] = "invalid_findmy_export"
+            else:
+                records = list(self.options.get(CONF_FIND_MY, []))
+                records = [item for item in records if item["identifier"] != record["identifier"]]
+                records.append(record)
+                self.options[CONF_FIND_MY] = records
+                devices = list(self.options.get(CONF_DEVICES, []))
+                address = accessory_address(record).upper()
+                if address not in devices:
+                    devices.append(address)
+                self.options[CONF_DEVICES] = devices
+                return await self._update_options()
+        return self.async_show_form(
+            step_id="findmy_add",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("accessory_json"): TextSelector(TextSelectorConfig(multiline=True)),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_findmy_remove(self, user_input=None):
+        """Remove the saved keys and stop tracking selected tags."""
+        records = self.options.get(CONF_FIND_MY, [])
+        if user_input is not None:
+            removed = set(user_input.get("tags", []))
+            addresses = {accessory_address(item).upper() for item in records if item["identifier"] in removed}
+            self.options[CONF_FIND_MY] = [item for item in records if item["identifier"] not in removed]
+            self.options[CONF_DEVICES] = [
+                address for address in self.options.get(CONF_DEVICES, []) if address.upper() not in addresses
+            ]
+            return await self._update_options()
+        return self.async_show_form(
+            step_id="findmy_remove",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("tags", default=[]): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(value=item["identifier"], label=item["name"]) for item in records
+                            ],
+                            multiple=True,
+                        )
+                    ),
+                }
+            ),
         )
 
     async def async_step_globalopts(self, user_input=None):
@@ -567,6 +635,9 @@ class BermudaOptionsFlowHandler(OptionsFlowWithConfigEntry):
         device = devreg.async_get(registry_id)
         device_address = None
         if device is not None:
+            for domain, identifier in device.identifiers:
+                if domain == DOMAIN and identifier.startswith("findmy:"):
+                    return self.coordinator.devices.get(identifier.lower())
             for connection in device.connections:
                 if connection[0] in {
                     DOMAIN_PRIVATE_BLE_DEVICE,

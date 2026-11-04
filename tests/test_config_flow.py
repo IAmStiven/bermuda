@@ -91,3 +91,43 @@ async def test_options_flow(hass: HomeAssistant, setup_bermuda_entry: MockConfig
 
     # Verify that the options were updated
     assert setup_bermuda_entry.options == MOCK_OPTIONS_GLOBALS
+
+
+async def test_find_my_import_update_remove(hass, setup_bermuda_entry):
+    """Import, replace and remove keys through the real options flow."""
+    import json
+    from custom_components.bermuda.const import CONF_DEVICES, CONF_FIND_MY
+    from custom_components.bermuda.find_my import accessory_address, parse_accessory
+    from .test_find_my import synthetic_export
+
+    entry = setup_bermuda_entry
+    export = synthetic_export()
+    for name in ("First name", "Updated tag"):
+        export["name"] = name
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "findmy"})
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "findmy_add"})
+        # Invalid input must stay on the form, without repeating sensitive values.
+        bad = await hass.config_entries.options.async_configure(result["flow_id"], {"accessory_json": "{}"})
+        assert bad["errors"] == {"base": "invalid_findmy_export"}
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"accessory_json": json.dumps(export)}
+        )
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert len(result["data"][CONF_FIND_MY]) == 1
+        assert result["data"][CONF_FIND_MY][0]["name"] == name
+        assert accessory_address(parse_accessory(json.dumps(export))).upper() in result["data"][CONF_DEVICES]
+        await hass.async_block_till_done()
+        coordinator = entry.runtime_data.coordinator
+        assert CONF_FIND_MY not in coordinator.options
+        assert len([d for d in coordinator.devices if d.startswith("findmy:")]) == 1
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "findmy"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "findmy_remove"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"tags": [export["identifier"]]})
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_FIND_MY] == []
+    assert not any(address.startswith("FINDMY:") for address in result["data"][CONF_DEVICES])
+    await hass.async_block_till_done()
+    assert not entry.runtime_data.coordinator._find_my_matches

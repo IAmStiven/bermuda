@@ -34,6 +34,7 @@ from .bermuda_advert import BermudaAdvert
 from .const import (
     _LOGGER,
     _LOGGER_SPAM_LESS,
+    ADDR_TYPE_FIND_MY,
     ADDR_TYPE_IBEACON,
     ADDR_TYPE_PRIVATE_BLE_DEVICE,
     BDADDR_TYPE_NOT_MAC48,
@@ -175,7 +176,10 @@ class BermudaDevice(dict):
             if self.address.count(":") != 5:
                 # Doesn't look like an actual MAC address - should be some sort of metadevice.
 
-                if re.match("^[A-Fa-f0-9]{32}_[A-Fa-f0-9]*_[A-Fa-f0-9]*$", self.address):
+                if self.address.startswith("findmy:"):
+                    self.address_type = ADDR_TYPE_FIND_MY
+                    self.metadevice_type.add("find_my")
+                elif re.match("^[A-Fa-f0-9]{32}_[A-Fa-f0-9]*_[A-Fa-f0-9]*$", self.address):
                     # It's an iBeacon uuid_major_minor
                     self.address_type = ADDR_TYPE_IBEACON
                     self.metadevice_type.add(METADEVICE_IBEACON_DEVICE)

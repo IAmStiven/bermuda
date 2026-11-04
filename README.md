@@ -214,3 +214,38 @@ Code template was mainly taken from [@Ludeeus](https://github.com/ludeeus)'s [in
 [releases-shield]: https://img.shields.io/github/release/agittins/bermuda.svg?style=for-the-badge
 [releases]: https://github.com/agittins/bermuda/releases
 [user_profile]: https://github.com/agittins
+
+### AirTags and Find My accessories
+
+This fork can recognize an owned AirTag or third-party Find My tag across Bluetooth
+address rotations using a **FindMy.py accessory JSON export**.
+
+1. Open **Settings → Devices & services → Bermuda → Configure**.
+2. Choose **AirTags / Find My tags → Add or update a tag**.
+3. Paste the accessory JSON and submit. Bermuda automatically selects the tag for
+   tracking and gives it one stable device identity for its sensors and tracker.
+
+The export must have `type: "accessory"`, `master_key`, `skn`, `sks`, `paired_at`,
+and a UUID `identifier`. `name` and `model` are optional. Include both
+`alignment_date` and `alignment_index` when available, with timezone-aware dates.
+Importing the same identifier replaces its export without changing entity IDs.
+Use **Remove tags** to erase its saved keys and stop tracking it; existing entities
+can then be deleted in Home Assistant.
+
+Resolution is local. No Apple account login, Find My location queries, or internet
+connection is needed. Existing Bluetooth scanners/proxies must hear the tag's
+Find My advertisements. This provides Bermuda's usual RSSI-based room detection,
+not Apple's UWB Precision Finding or remote Find My locations. Tags connected to
+an owner device may not advertise consistently, so they are not guaranteed to be
+continuous presence beacons.
+
+Primary and secondary rotating keys are derived using the protocol implemented
+by [FindMy.py](https://github.com/malmeloo/FindMy.py). The resolver retains candidate
+addresses since the imported alignment to accommodate paused tag clocks. An old
+or missing alignment increases initial derivation time and memory use. If pairing
+or key alignment changes, import a fresh export. Cryptography runs outside Home
+Assistant's event loop, and address candidates refresh once a minute.
+
+Exports contain private tracking keys. They are saved in Home Assistant's local
+configuration and backups, but are excluded from Bermuda device dumps and its
+integration diagnostics. Do not publish exports with bug reports.
